@@ -1,8 +1,13 @@
 # love2d-shmup
-An open source shmup game made in Löve2D. A Continuation of my abandoned TIC-80 project.
+An open source shmup game made in Löve2D. A Continuation of my abandoned TIC-80 project for the Devtober2022 jam.
 
+![alt tag](docs/thumbnail.gif)
 
 [![ko-fi](https://www.ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/L4L81GBPX)
+
+# Devlog Links
+
+You can read all the Devlogs of this project over in my [**article collection**](https://github.com/Achie72/kofi-articles#devtober2022)
 
 # Social media:  
 
