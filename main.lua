@@ -46,7 +46,9 @@ player = {
     laserSfx = nil,
     kills = 0,
     killedBy = 0,
-    survived = 0
+    survived = 0,
+    score = 1200,
+    pilotStyle = ""
 }
 
 director = {
@@ -68,6 +70,13 @@ statistics = {
 
 gameMode = 1
 menuSelector = 1
+nameSelector = {65,65,65}
+nameLetterSelector = 1
+highScoreAchieved = false
+newHighScoreIndex = 0
+newHighScoreSet = false
+
+
 buttonHeld = false
 menuProp = {
     x = 0,
@@ -85,6 +94,7 @@ canvasHeight = 136
 gameCanvas = nil
 myFont = nil
 released = false
+
 --- collections
 
 
@@ -127,6 +137,7 @@ bulletFlash = nil
 enemyBulletSprite = {nil, nil}
 experienceSprites = {nil, nil}
 eliteIndicator = {nil, nil, nil}
+selectorSprite = {nil, nil}
 frozenBulSprite = nil
 
 upgradeSprites = {}
@@ -140,6 +151,8 @@ upgradeIndicator = 0
 upgradeSelectorSprite = nil
 levelUp = false
 ticks = 0
+
+highScores = {}
 
 function love.conf(t)
 	t.console = true
@@ -198,6 +211,9 @@ function love.load()
     for i=1,3 do
         eliteIndicator[i] = love.graphics.newImage("gfx/ui/eliteInd_"..i..".png")
     end
+
+    selectorSprite[1] = love.graphics.newImage("gfx/ui/selectorUp.png")
+    selectorSprite[2] = love.graphics.newImage("gfx/ui/selectorDown.png")
     --love.graphics.setCanvas(gameCanvas)
     --love.graphics.setCanvas()
 
@@ -206,6 +222,64 @@ function love.load()
 
     myFont = love.graphics.newFont('gfx/BMmini.TTF', 8)
     startTime = love.timer.getTime( )
+    load_high_scores()
+end
+
+function split(source, delimiters)
+    local elements = {}
+    local pattern = '([^'..delimiters..']+)'
+    string.gsub(source, pattern, function(value) elements[#elements + 1] =     value;  end);
+    return elements
+end
+
+function load_high_scores()
+    local returnInfo = love.filesystem.getInfo("save/data.sav","file")
+    if not (returnInfo == nil) then
+        local hsArray = {}
+        local highScoresString = love.filesystem.read("save/data.sav", returnInfo.size)
+        hsArray = split(highScoresString, ';')
+        for _,hs in ipairs(hsArray) do
+            local individualHighScore = split(hs, ',')
+            local highScoreVal = {
+                name = individualHighScore[1],
+                score = tonumber(individualHighScore[2]),
+                style = individualHighScore[3]
+            }
+            table.insert(highScores, highScoreVal)
+        end
+    else
+        for i=1,5 do
+            local hs = {
+                name = "empty",
+                score = 0,
+                style = "unknown style"
+            }
+            table.insert(highScores, hs)
+        end
+    end
+
+    save_high_score()
+end
+
+function compare(a,b)
+    return a.score > b.score
+end
+
+function save_high_score()
+    table.sort(highScores, compare)
+    local hsText = ""
+    for _,hs in ipairs(highScores) do
+        hsText = hsText..hs.name..","..hs.score..","..hs.style..";"
+    end
+   
+    local suc = love.filesystem.createDirectory("save")
+
+    suc,msg = love.filesystem.write("save/data.sav", hsText)
+    if suc then
+        print("done")
+    else
+        print("Error: "..msg)
+    end
 end
 
 function reset()
@@ -420,7 +494,6 @@ function add_enemy(_x,_tpe,_family, _elite)
     local shotCooldowns = {0, 60, 50, 90, 5}
     local hpNumber =  math.floor(2*(1+_tpe)*(1+director.difficulty))
     local shotCalc = math.floor(shotCooldowns[_tpe]/math.max((1+(director.difficulty)),0.15))
-    print(shotCalc)
 	local enemy = {
 		x = _x,
 		y = -4,
@@ -447,7 +520,6 @@ function add_enemy(_x,_tpe,_family, _elite)
         credits = director.enemyCredits[_tpe] * (1+director.eliteMultiplier[_elite+1]) 
 	}
 
-    print(enemy.shotCooldown)
 	
 	if enemy.tpe == 5 then enemy.shootingInterval = 60 end
     if enemy.movement == "left-right" then
@@ -479,7 +551,7 @@ function add_background()
     end
 
     if ticks% 20 == 0 then
-        add_stars(12)
+        add_stars(13)
     end
 end
 
@@ -493,7 +565,6 @@ function love.update(dt)
 
     if accumulator >= tickPeriod then
         ticks= ticks+ 1
-        
         if gameMode == 1 then
             update_menu()
         elseif gameMode == 2 then
@@ -501,16 +572,41 @@ function love.update(dt)
         elseif gameMode == 3 then
             update_tutorial()
         elseif gameMode == 4 then
-            update_credits()
+            update_highscores()
         elseif gameMode == 5 then
+            update_credits()
+        elseif gameMode == 6 then
+            love.event.quit(0)
+        elseif gameMode == 7 then
             update_game_over()
+        elseif gameMode == 8 then
+            update_new_highscore()
         end
 
         accumulator = accumulator - tickPeriod
     end -- tick accumulation
 end
 
+function update_credits()
+    add_background()
+    if love.keyboard.isDown("y") then
+        gameMode = 1
+        buttonHeld = true
+    end
+    for _,star in ipairs(stars) do
+        local speed = 2
+        if star.clr == 8 then
+            speed = 1
+        end
+        star.y = star.y + speed
+        if star.y > 136 then
+            table.remove(stars,_)
+        end
+    end
+end
+
 function update_menu()
+
     if love.keyboard.isDown("w") or love.keyboard.isDown("up") then
         if buttonHeld == false then
             menuSelector = menuSelector - 1
@@ -525,8 +621,8 @@ function update_menu()
         buttonHeld = false
     end
 
-    if menuSelector > 3 then menuSelector = 1 end
-    if menuSelector < 1 then menuSelector = 3 end
+    if menuSelector > 5 then menuSelector = 1 end
+    if menuSelector < 1 then menuSelector = 5 end
 
     if love.keyboard.isDown("x") then
         gameMode = menuSelector + 1 
@@ -559,10 +655,88 @@ function update_menu()
     end
 end
 
-function update_game_over()
+function update_tutorial()
+    add_background()
+
+    if love.keyboard.isDown("y") then
+        if not buttonHeld then
+            gameMode = 1
+        end
+    end
+
+    for _,star in ipairs(stars) do
+        local speed = 2
+        if star.clr == 8 then
+            speed = 1
+        end
+        star.y = star.y + speed
+        if star.y > 136 then
+            table.remove(stars,_)
+        end
+    end
+end
+
+function update_new_highscore()
+    add_background()
+    if love.keyboard.isDown("left") then
+        if buttonHeld == false then
+            nameLetterSelector = nameLetterSelector - 1
+            buttonHeld = true
+        end
+    elseif love.keyboard.isDown("right") then
+        if buttonHeld == false then
+            nameLetterSelector = nameLetterSelector + 1
+            buttonHeld = true
+        end
+    elseif love.keyboard.isDown("up") then
+        if buttonHeld == false then
+            nameSelector[nameLetterSelector] = nameSelector[nameLetterSelector] - 1
+            buttonHeld = true
+        end
+    elseif love.keyboard.isDown("down") then
+        if buttonHeld == false then    
+            nameSelector[nameLetterSelector] = nameSelector[nameLetterSelector] + 1
+            buttonHeld = true
+        end
+    elseif love.keyboard.isDown("y") then
+        if not buttonHeld then
+            local name = string.char(nameSelector[1])..string.char(nameSelector[2])..string.char(nameSelector[3])
+            highScores[newHighScoreIndex].name = name
+            gameMode = 1
+            save_high_score()
+            reset()
+        end
+    else
+        buttonHeld = false
+    end 
+
+    if nameLetterSelector > 3 then
+        nameLetterSelector = 1
+    elseif nameLetterSelector < 1 then
+        nameLetterSelector = 3
+    end
+
+    if nameSelector[nameLetterSelector] > 90 then
+        nameSelector[nameLetterSelector] = 65
+    elseif nameSelector[nameLetterSelector] < 65 then
+        nameSelector[nameLetterSelector] = 90
+    end 
+
+    for _,star in ipairs(stars) do
+        local speed = 2
+        if star.clr == 8 then
+            speed = 1
+        end
+        star.y = star.y + speed
+        if star.y > 136 then
+            table.remove(stars,_)
+        end
+    end
+end
+
+function update_highscores()
     add_background()
     if love.keyboard.isDown("y") then
-        reset()
         gameMode = 1
         buttonHeld = true
     end
@@ -576,10 +750,35 @@ function update_game_over()
             table.remove(stars,_)
         end
     end
+end
+
+function update_game_over()
+    add_background()
+    if love.keyboard.isDown("y")then
+        if buttonHeld == false then
+            if highScoreAchieved then
+                gameMode = 8
+            else
+                gameMode = 1
+                reset()
+            end
+            buttonHeld = true
+        end
+    end
     if ticks%15 == 0 then
         menuProp.animFrame = menuProp.animFrame + 1
         if menuProp.animFrame > 2 then
             menuProp.animFrame = 1
+        end
+    end
+    for _,star in ipairs(stars) do
+        local speed = 2
+        if star.clr == 8 then
+            speed = 1
+        end
+        star.y = star.y + speed
+        if star.y > 136 then
+            table.remove(stars,_)
         end
     end
 end
@@ -760,6 +959,7 @@ function update_game()
             xp.y = xp.y + 1
             if collide(player, xp) then
                 player.xp = player.xp + xp.val
+                player.score = player.score + xp.val * 10
                 table.remove(experience,_)
             end
             
@@ -926,6 +1126,7 @@ function update_enemies()
             director.credits = director.credits + enemy.credits
 			table.remove(enemies,_)
             player.kills = player.kills+1
+            player.score = player.score + enemy.tpe*10
 		end
 
         if ticks%15 == 0 then
@@ -1096,9 +1297,9 @@ function move_enemy(enemy)
         end
     else
         if not ((enemy.x + enemy.sx <= 0) or (enemy.x+enemy.sx > 192)) then
-                enemy.x = enemy.x + enemy.sx*eliteMultiplier
-            end
-            enemy.y = enemy.y + enemy.sy*eliteMultiplier
+            enemy.x = enemy.x + enemy.sx*eliteMultiplier
+        end
+        enemy.y = enemy.y + enemy.sy*eliteMultiplier
     end
 end
 
@@ -1251,7 +1452,7 @@ function hit_player(_damage, _status, _source)
     end
 
     if player.hp <= 0 then
-        gameMode = 5
+        gameMode = 7
         menuProp.spr = enemySprites[_source]
         player.survived = time()
     end
@@ -1285,16 +1486,20 @@ function love.draw()
 
     love.graphics.setCanvas(gameCanvas)
     love.graphics.clear(26/255, 28/255, 44/255, 1)
-    if gameMode == 1 then
+     if gameMode == 1 then
         draw_menu()
     elseif gameMode == 2 then
-        draw_game(drawScale)
+        draw_game()
     elseif gameMode == 3 then
         draw_tutorial()
     elseif gameMode == 4 then
-        draw_credits()
+        draw_highscores()
     elseif gameMode == 5 then
+        draw_credits()
+    elseif gameMode == 7 then
         draw_game_over()
+    elseif gameMode == 8 then
+        draw_new_highscore()
     end
     love.graphics.setCanvas()
 
@@ -1368,7 +1573,9 @@ function draw_game_over()
     elseif shootStyleRatio < 0.5 then
         shootStyle = 2
     end
-    printText("Pilot Style: "..positionStyleText[positionStyle].." "..shootingStyleText[shootStyle], 20, 30, 5)
+
+    player.pilotStyle = positionStyleText[positionStyle].." "..shootingStyleText[shootStyle]
+    printText("Pilot Style: "..player.pilotStyle, 20, 30, 5)
     printText("Pews Pewed: "..statistics.shot, 20, 38, 5)
     printText("Parsecs Travelled: "..(math.floor(player.survived*math.pi)), 20, 46, 5)
     printText("Enemeis Defeated: "..player.kills, 20, 54, 5)
@@ -1403,6 +1610,74 @@ function draw_game_over()
     love.graphics.draw(menuProp.spr[menuProp.animFrame], 220, 6, 0, 1, 1)
     printText("Press Y to menu", 160, 114, 5)
 
+    if (not newHighScoreSet) then
+        highScoreAchieved = false
+    end
+    for _,hs in ipairs(highScores) do
+        if (player.score > hs.score) and (not newHighScoreSet) then
+            print(player.score.." is bigger than: "..hs.score.." in index: ".._)
+
+
+
+
+            highScoreAchieved = true
+            newHighScoreIndex = _
+            
+            newHighScores = highScores
+            for i=#newHighScores,newHighScoreIndex do
+                if i > 1 then
+                    newHighScores[i] = newHighScores[i-1]
+                end
+            end
+            highScores = newHighScores
+            
+            newHighScoreSet = true
+            hs.score = player.score
+            hs.style = player.pilotStyle
+            
+            break
+        end
+    end
+    if not (newHighScoreSet) then
+        printText("Final Score: "..player.score, 10, 114, 5)
+    else
+        if ticks%60 > 30 then
+            printText("New High Score! "..player.score, 10, 114, 5)
+        end
+    end
+end
+
+function draw_tutorial()
+    draw_stars()
+    printText("Coming soon", 10, 10, 5)
+    printText("Press Y to menu", 160, 114, 5)
+end
+
+function draw_new_highscore()
+    draw_stars()
+    draw_color(5)
+    love.graphics.print("New HighScore!!!", myFont, 10, 10, 0, 2, 2)
+    reset_color()
+
+    printText("Enter Pilot Name:", 20, 30, 5)
+
+    for _,hs in ipairs(highScores) do
+
+        if not (_==newHighScoreIndex) then
+            printText(_..". "..hs.name.." - "..hs.score.." - "..hs.style, 20, 30+_*15, 7)
+        else
+            if ticks%20 > 10 then
+                printText(_..". ", 20,30+_*15, 5)
+            end
+            for i=1,3 do
+                printText(string.char(nameSelector[i]), 22+i*10, 30+_*15, 5)
+            end
+            printText(" - "..player.score.." - "..player.pilotStyle, 58, 30+_*15, 5)
+            love.graphics.draw(selectorSprite[1], 20+nameLetterSelector*10, 22+_*15)
+            love.graphics.draw(selectorSprite[2], 20+nameLetterSelector*10, 36+_*15)
+        end
+    end
+    printText("Press Y to confirm", 160, 114, 5)
 end
 
 function draw_menu()
@@ -1412,17 +1687,19 @@ function draw_menu()
 
     local title = "Rogala"
     draw_color(5)
-    --love.graphics.print(title, myFont, 20, 40, 0, 2, 2)
+    love.graphics.print(title, myFont, 20, 40, 0, 2, 2)
     reset_color()
 
-    local menuText = {"Start Game", "Tutorial", "Credits"}
-    for i=1,3 do
+    local menuText = {"Start Game", "Tutorial", "HighScores", "Credits", "Quit Game"}
+    for i=1,#menuText do
+        local color = 5
+        if (i == 5 ) then color = 2 end
         if (i == menuSelector) then
             if ticks%20 > 10 then
-                printText(menuText[i], 40, 60+i*10, 5)
+                printText(menuText[i], 40, 60+i*10, color)
             end
         else
-            printText(menuText[i], 40, 60+i*10, 5)
+            printText(menuText[i], 40, 60+i*10, color)
         end
     end
     
@@ -1431,9 +1708,35 @@ function draw_menu()
 
 end
 
+function draw_highscores()
+    draw_stars()
+    printText("High Scores:", 10, 10, 5)
+    for _,hs in ipairs(highScores) do
+        printText(_..". "..hs.name.." - "..hs.score.." - "..hs.style, 20, 20+_*10, 5)
+    end
+    printText("Press Y to menu", 160, 114, 5)
+end
+
+function draw_credits()
+    draw_stars()
+    draw_color(5)
+    love.graphics.print("Credits", myFont, 10, 10, 0, 2, 2)
+    reset_color()  
+
+    printText("Thanks to my Kofi Supporters:", 20, 30, 5)
+    printText("Csondi", 30, 40, 5)
+
+    printText("Thanks to all the peeps from:", 20, 50, 5)
+    printText("Lazy Devs Academy Community", 30, 60, 5)
+    printText("Devtober 2022 Community", 30, 70, 5)
+    printText("Love Community", 30, 80, 5)
+    printText("Press Y to menu", 160, 114, 5)
+end
+
 function draw_game(_ds)
    
     printText(director.difficultyRating[math.floor(director.difficulty)], 1, 128, 8)
+    printText(player.score, 196-#tostring(player.score)*4, 128, 8)
    
     for _,expl in ipairs(explosionAreas) do
         draw_color(1)
