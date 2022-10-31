@@ -8,6 +8,8 @@ An open source shmup game made in Löve2D. A Continuation of my abandoned TIC-80
 # Devlog Links
 
 You can read all the Devlogs of this project over in my [**article collection**](https://github.com/Achie72/kofi-articles#devtober2022)
+[Trello table](https://trello.com/b/s5vyuP8R/rogala)
+
 
 # Social media:  
 
