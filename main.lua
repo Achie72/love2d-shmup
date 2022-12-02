@@ -10,8 +10,8 @@ player = {
     x = 64,
     y = 64,
     idleSpr = nil,
-    hp = 30,
-    maxHp = 30,
+    hp = 100,
+    maxHp = 100,
     nextShot = 0,
     shotCooldown = 30,
     flash = 0,
@@ -47,7 +47,7 @@ player = {
     kills = 0,
     killedBy = 0,
     survived = 0,
-    score = 1200,
+    score = 0,
     pilotStyle = ""
 }
 
@@ -135,6 +135,7 @@ playerBulletSpr = nil
 rocketSprite = nil
 bulletFlash = nil
 enemyBulletSprite = {nil, nil}
+enemyShootSfx = nil
 experienceSprites = {nil, nil}
 eliteIndicator = {nil, nil, nil}
 selectorSprite = {nil, nil}
@@ -151,12 +152,9 @@ upgradeIndicator = 0
 upgradeSelectorSprite = nil
 levelUp = false
 ticks = 0
+webBuild = false
 
 highScores = {}
-
-function love.conf(t)
-	t.console = true
-end
 
 function love.load()
 
@@ -164,8 +162,7 @@ function love.load()
 
     --window = {translateX = 40, translateY = 40, scale = 1, width = 1920, height = 1080}
 	--width, height = love.graphics.getDimensions ()
-	love.window.setMode (960, 548, {resizable=true, borderless=false})
-    love.console = true
+    love.window.setMode (960, 548, {resizable=true, borderless=false})
     gameCanvas = love.graphics.newCanvas(canvasWidth, canvasHeight)
     
 
@@ -219,6 +216,7 @@ function love.load()
 
     -- load sounds
     player.laserSfx = love.audio.newSource("sfx/player/sfx.wav", "static")
+    enemyShootSfx = love.audio.newSource("sfx/enemies/enemy_shoot.wav", "static")
 
     myFont = love.graphics.newFont('gfx/BMmini.TTF', 8)
     startTime = love.timer.getTime( )
@@ -233,32 +231,44 @@ function split(source, delimiters)
 end
 
 function load_high_scores()
-    local returnInfo = love.filesystem.getInfo("save/data.sav","file")
-    if not (returnInfo == nil) then
-        local hsArray = {}
-        local highScoresString = love.filesystem.read("save/data.sav", returnInfo.size)
-        hsArray = split(highScoresString, ';')
-        for _,hs in ipairs(hsArray) do
-            local individualHighScore = split(hs, ',')
-            local highScoreVal = {
-                name = individualHighScore[1],
-                score = tonumber(individualHighScore[2]),
-                style = individualHighScore[3]
-            }
-            table.insert(highScores, highScoreVal)
+    if not (webBuild) then
+        local returnInfo = love.filesystem.getInfo("save/data.sav","file")
+        
+        if not (returnInfo == nil) then
+            local hsArray = {}
+            local highScoresString = love.filesystem.read("save/data.sav", returnInfo.size)
+            hsArray = split(highScoresString, ';')
+            for _,hs in ipairs(hsArray) do
+                local individualHighScore = split(hs, ',')
+                local highScoreVal = {
+                    name = individualHighScore[1],
+                    score = tonumber(individualHighScore[2]),
+                    style = individualHighScore[3]
+                }
+                table.insert(highScores, highScoreVal)
+            end
+        else
+            for i=1,5 do
+                local hs = {
+                    name = "empty",
+                    score = 0,
+                    style = "unknown style"
+                }
+                table.insert(highScores, hs)
+            end
         end
+
+        save_high_score()
     else
         for i=1,5 do
             local hs = {
-                name = "empty",
+                name = "EMP",
                 score = 0,
                 style = "unknown style"
             }
             table.insert(highScores, hs)
         end
     end
-
-    save_high_score()
 end
 
 function compare(a,b)
@@ -285,8 +295,8 @@ end
 function reset()
     player.x = 64
     player.y = 64
-    player.hp = 20
-    player.maxHp = 30
+    player.hp = 100
+    player.maxHp = 100
     player.nextShot = 0
     player.shotCooldown = 30
     player.flash = 0
@@ -312,6 +322,8 @@ function reset()
     player.kills = 0
     player.killedBy = 0
     player.survived = 0
+    score = 0
+    pilotStyle = ""
 
     director.maximumCredits = 0
     director.credits = 8
@@ -323,6 +335,13 @@ function reset()
     statistics.high = 0
     statistics.shot = 0
     statistics.missed = 0
+
+    nameSelector = {65,65,65}
+    nameLetterSelector = 1
+    highScoreAchieved = false
+    newHighScoreIndex = 0
+    newHighScoreSet = false
+
     startTime = love.timer.getTime( )
     particles = {}
     bullets = {}
@@ -425,7 +444,7 @@ function add_xp(_x,_y,_val)
 	table.insert(experience, xp)
 end
 
-function add_enemy_bul(_x,_y,_sx,_sy, _tpe, _source)
+function add_enemy_bul(_x,_y,_sx,_sy, _tpe, _source, _damage)
     if _tpe == nil then _tpe = 0 end
 	local bul = {
 		x = _x,
@@ -436,7 +455,8 @@ function add_enemy_bul(_x,_y,_sx,_sy, _tpe, _source)
 		ch = 4,
         animFrame = 1,
         tpe = _tpe,
-        source = _source
+        source = _source,
+        damage = _damage
 	}
 	table.insert(enemyBullets,bul)
 end
@@ -491,8 +511,9 @@ end
 
 function add_enemy(_x,_tpe,_family, _elite)
     local movements = {"downward", "sinus", "left-right", "downward", "left-right"}
-    local shotCooldowns = {0, 60, 50, 90, 5}
-    local hpNumber =  math.floor(2*(1+_tpe)*(1+director.difficulty))
+    local bulDamages = {2,3,4,2,2}
+    local shotCooldowns = {240, 60, 50, 90, 5}
+    local hpNumber =  math.floor(2*(1+_tpe)*(1+director.difficulty))*10
     local shotCalc = math.floor(shotCooldowns[_tpe]/math.max((1+(director.difficulty)),0.15))
 	local enemy = {
 		x = _x,
@@ -513,6 +534,7 @@ function add_enemy(_x,_tpe,_family, _elite)
         shotCooldown = shotCalc,
 		isShooting = false,
 		damaged = 0,
+        bulDamage = math.floor(bulDamages[_tpe] * director.difficulty),
 		invFrames = 0,
 		elite = _elite,
         movement = movements[_tpe],
@@ -539,7 +561,7 @@ function add_enemy_hazard (_x, _y, _r, _tpe, _age, _damage, _source)
         r = _r,
         tpe = _tpe,
         age = _age,
-        damage = _damage,
+        damage = _damage*10,
         source = _source
     }
     table.insert(hazards, hazard)
@@ -589,7 +611,7 @@ end
 
 function update_credits()
     add_background()
-    if love.keyboard.isDown("y") then
+    if love.keyboard.isDown("c") then
         gameMode = 1
         buttonHeld = true
     end
@@ -658,7 +680,7 @@ end
 function update_tutorial()
     add_background()
 
-    if love.keyboard.isDown("y") then
+    if love.keyboard.isDown("c") then
         if not buttonHeld then
             gameMode = 1
         end
@@ -698,12 +720,14 @@ function update_new_highscore()
             nameSelector[nameLetterSelector] = nameSelector[nameLetterSelector] + 1
             buttonHeld = true
         end
-    elseif love.keyboard.isDown("y") then
+    elseif love.keyboard.isDown("c") then
         if not buttonHeld then
             local name = string.char(nameSelector[1])..string.char(nameSelector[2])..string.char(nameSelector[3])
             highScores[newHighScoreIndex].name = name
             gameMode = 1
-            save_high_score()
+            if not (webBuild) then
+                save_high_score()  
+            end
             reset()
         end
     else
@@ -736,7 +760,7 @@ end
 
 function update_highscores()
     add_background()
-    if love.keyboard.isDown("y") then
+    if love.keyboard.isDown("c") then
         gameMode = 1
         buttonHeld = true
     end
@@ -754,7 +778,7 @@ end
 
 function update_game_over()
     add_background()
-    if love.keyboard.isDown("y")then
+    if love.keyboard.isDown("c")then
         if buttonHeld == false then
             if highScoreAchieved then
                 gameMode = 8
@@ -803,7 +827,7 @@ function update_game()
 
 
     if levelUp then
-        if love.keyboard.isDown("y") then
+        if love.keyboard.isDown("c") then
             levelUp = false
             
             local choosenUpgrade = levelUpgrades[upgradeIndicator]
@@ -867,6 +891,9 @@ function update_game()
         if love.keyboard.isDown("d") or love.keyboard.isDown("right") then
             newPx = player.x + player.speed / frozenMod
             player.lean = 1
+        end
+        if love.keyboard.isDown("g") then
+            player.xp = player.level*2
         end
 
         local newLoc = {
@@ -1061,10 +1088,16 @@ function update_upgrades()
 		player.timeUntilShields = player.timeUntilShields -1
 		if player.timeUntilShields < 0 then
 			if player.shield < player.maxShield then
-				player.shield = player.shield + 0.5
+				player.shield = player.shield + 0.1
 			end
+            if player.shield > player.maxShield then
+                player.shield = player.maxShield
+            end
 			player.timeUntilShields = 0
 		end
+        if player.shield < 0 then
+            player.shield = 0
+        end
 	end
 	
     -- rockets
@@ -1083,9 +1116,13 @@ function update_upgrades()
     end
 	
     -- repair bots
-    if (player.timeUntilHeal == 0) and (player.upgrades[5] > 0) then
+    if (player.timeUntilHeal == 0) then
+        local nanoBotHeal = 1
+        if player.upgrades[5] > 0 then
+            nanoBotHeal = nanoBotHeal + player.upgrades[5]
+        end
         if ticks%60 == 0 then
-            player.hp = player.hp + player.upgrades[5]
+            player.hp = player.hp + nanoBotHeal
             if player.hp > player.maxHp then
                 player.hp = player.maxHp
             end
@@ -1168,8 +1205,8 @@ function update_enemies()
 		
 		for _,bul in ipairs(bullets) do
             if collide(bul, enemy) then
-                local damage = 1
-                if bul.tpe == 1 then damage = 2 end
+                local damage = 10
+                if bul.tpe == 10 then damage = 20 end
                 damage_enemy(enemy, damage)
                 
                 -- explosive rounds
@@ -1188,7 +1225,7 @@ function update_enemies()
 		for id,expl in ipairs(explosionAreas) do
 			if close_enough(enemy,expl,player.explosionRange) then
 				if collidec(expl,enemy) then
-					damage_enemy(enemy,1)
+					damage_enemy(enemy,5)
 				end
 			end
 		end
@@ -1197,11 +1234,21 @@ function update_enemies()
 			enemy.shoot = enemy.shoot - 1
 		end
 		
+        if enemy.tpe == 1 then
+            if enemy.nextShoot == 0 then
+                add_enemy_bul(enemy.x+4,enemy.y,0,1, status, enemy.tpe, enemy.bulDamage)
+                enemy.nextShoot = enemy.shotCooldown
+				enemy.shoot = 10
+                enemyShootSfx:play()
+            end
+        end
+
 		if enemy.tpe == 2 then
 			if enemy.nextShoot == 0 then
-				add_enemy_bul(enemy.x+4,enemy.y,0,1.5, status, enemy.tpe)
+				add_enemy_bul(enemy.x+4,enemy.y,0,1.5, status, enemy.tpe, enemy.bulDamage)
 				enemy.nextShoot = enemy.shotCooldown
 				enemy.shoot = 3
+                enemyShootSfx:play()
 				--sfx(1,nil,-1,0)
 			end
 		end
@@ -1211,9 +1258,10 @@ function update_enemies()
 				local angle = math.atan2(enemy.y - player.y, enemy.x - player.x)
 				local bsx = -math.cos(angle)
 				local bsy = -math.sin(angle)
-				add_enemy_bul(enemy.x,enemy.y,bsx,bsy, status, enemy.tpe)
+				add_enemy_bul(enemy.x,enemy.y,bsx,bsy, status, enemy.tpe, enemy.bulDamage)
 				enemy.nextShoot = enemy.shotCooldown
 				enemy.shoot = 3
+                enemyShootSfx:play()
 				--sfx(1,nil,-1,0)
 			end
 		end
@@ -1221,10 +1269,11 @@ function update_enemies()
 		if enemy.tpe == 4 then
 			if enemy.nextShoot == 0 then
 				for i=-math.pi,math.pi,0.5 do
-					add_enemy_bul(enemy.x, enemy.y+4, math.sin(i), math.cos(i), status, enemy.tpe)
+					add_enemy_bul(enemy.x, enemy.y+4, math.sin(i), math.cos(i), status, enemy.tpe, enemy.bulDamage)
 				end
 				enemy.nextShoot = enemy.shotCooldown
 				enemy.shoot = 3
+                enemyShootSfx:play()
 				--sfx(1,nil,-1,0)
 			end
 		end
@@ -1233,10 +1282,11 @@ function update_enemies()
 			if (enemy.nextShoot == 0)and (enemy.isShooting) then
 				local a = math.sin(math.rad(ticks*2))
 				local b = math.cos(math.rad(ticks*2))
-				add_enemy_bul(enemy.x+4, enemy.y+4,  a/2, b/2, status, enemy.tpe)
-				add_enemy_bul(enemy.x+4, enemy.y+4,  -a/2, -b/2, status, enemy.tpe) 
+				add_enemy_bul(enemy.x+4, enemy.y+4,  a/2, b/2, status, enemy.tpe, enemy.bulDamage)
+				add_enemy_bul(enemy.x+4, enemy.y+4,  -a/2, -b/2, status, enemy.tpe, enemy.bulDamage) 
 				enemy.nextShoot = 3
 				enemy.shoot = 2
+                enemyShootSfx:play()
 			 --sfx(1,nil,-1,0)
 			end
 		end
@@ -1313,7 +1363,7 @@ function update_hazards()
         -- flame trail
         if hazard.tpe == 1 then
             if collidec(hazard, player) then
-                hit_player(hazard.damage,"",hazard.source)
+                hit_player(math.floor(hazard.damage*director.difficulty),"",hazard.source)
             end
             if love.math.random() > 0.8 then
                 add_particle(hazard.x, hazard.y, 0.2, 0.2, love.math.random(1,3), "expl", hazard.r, 2)
@@ -1392,7 +1442,7 @@ function update_bullets ()
 				table.remove(bullets,_)
 			end
 		end
-        if out_of_bounds(bul) and (not (bul.tpe == 2)) then
+        if out_of_bounds(bul) and (not (bul.tpe == 1)) then
 			table.remove(bullets,_)
             statistics.missed = statistics.missed + 1
 		end
@@ -1421,7 +1471,7 @@ function update_bullets ()
 			table.remove(enemyBullets,_)
             local status = ""
             if ebul.tpe == 1 then status = "frozen" end
-			hit_player(2, status, ebul.source)
+			hit_player(ebul.damage, status, ebul.source)
 		end	
 	end
 end
@@ -1434,7 +1484,7 @@ function hit_player(_damage, _status, _source)
         if rng > player.dodgeChance then
             if (player.hasShield) and (player.shield > 0) then
                 player.shield = player.shield - _damage
-                player.timeUntilShields = 90
+                player.timeUntilShields = 150
             else	
                 player.hp = player.hp - _damage*(1-player.upgrades[8]/10)
             end
@@ -1608,18 +1658,14 @@ function draw_game_over()
     menuProp.x = 220
     menuProp.y = 6
     love.graphics.draw(menuProp.spr[menuProp.animFrame], 220, 6, 0, 1, 1)
-    printText("Press Y to menu", 160, 114, 5)
+    printText("Press C to menu", 160, 114, 5)
 
     if (not newHighScoreSet) then
         highScoreAchieved = false
     end
     for _,hs in ipairs(highScores) do
         if (player.score > hs.score) and (not newHighScoreSet) then
-            print(player.score.." is bigger than: "..hs.score.." in index: ".._)
-
-
-
-
+          
             highScoreAchieved = true
             newHighScoreIndex = _
             
@@ -1650,7 +1696,7 @@ end
 function draw_tutorial()
     draw_stars()
     printText("Coming soon", 10, 10, 5)
-    printText("Press Y to menu", 160, 114, 5)
+    printText("Press C to menu", 160, 114, 5)
 end
 
 function draw_new_highscore()
@@ -1677,7 +1723,7 @@ function draw_new_highscore()
             love.graphics.draw(selectorSprite[2], 20+nameLetterSelector*10, 36+_*15)
         end
     end
-    printText("Press Y to confirm", 160, 114, 5)
+    printText("Press C to confirm", 160, 114, 5)
 end
 
 function draw_menu()
@@ -1706,6 +1752,7 @@ function draw_menu()
     local gameOptionIndex = (menuSelector + 1) - 2
     love.graphics.draw(upgradeSelectorSprite, 28, 60+menuSelector*10, 0, 1, 1)
 
+    printText("Press X to select", 160, 114, 5)
 end
 
 function draw_highscores()
@@ -1714,7 +1761,7 @@ function draw_highscores()
     for _,hs in ipairs(highScores) do
         printText(_..". "..hs.name.." - "..hs.score.." - "..hs.style, 20, 20+_*10, 5)
     end
-    printText("Press Y to menu", 160, 114, 5)
+    printText("Press C to menu", 160, 114, 5)
 end
 
 function draw_credits()
@@ -1730,7 +1777,7 @@ function draw_credits()
     printText("Lazy Devs Academy Community", 30, 60, 5)
     printText("Devtober 2022 Community", 30, 70, 5)
     printText("Love Community", 30, 80, 5)
-    printText("Press Y to menu", 160, 114, 5)
+    printText("Press C to menu", 160, 114, 5)
 end
 
 function draw_game(_ds)
@@ -1848,12 +1895,10 @@ function draw_game(_ds)
         love.graphics.rectangle("fill",160,120,21,1)
         love.graphics.rectangle("fill",180,100,1,20)
         reset_color()
-		--rectb(19,19,161,91,5)	
 		if ticks%20 > 10 then	
             local lvlString = "--- level up ---"
 			printText(lvlString,100-#lvlString*2,20,5)
             love.graphics.draw(upgradeSelectorSprite,15,20+upgradeIndicator*20,0, 1, 1)		
-			--print(levelUpgrades[upgradeIndicator],8,20+upgradeIndicator*20,3)
 	
 		end
 		for _,up in ipairs(levelUpgrades) do
@@ -1865,8 +1910,6 @@ function draw_game(_ds)
 			printText("> "..effects[up+1],53,26+_*20,7)
 		end
 	end
-
-    --draw_health_bars()
 end
 
 function draw_health_bars()
@@ -1909,7 +1952,7 @@ function draw_enemies()
                 reset_color()
                 player.nextPylon = 10
                 
-                damage_enemy(enemy, 1)
+                damage_enemy(enemy, 5 + player.upgrades[11])
 
                 local zep = {"zip","zap","zop"}
                 local side = -1
