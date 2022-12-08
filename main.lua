@@ -156,6 +156,10 @@ webBuild = false
 
 highScores = {}
 
+audioManager = {
+    backgroundMusic = nil,
+}
+
 function love.load()
 
     love.graphics.setDefaultFilter('nearest','nearest',0)
@@ -219,6 +223,10 @@ function love.load()
     enemyShootSfx = love.audio.newSource("sfx/enemies/enemy_shoot.wav", "static")
 
     myFont = love.graphics.newFont('gfx/BMmini.TTF', 8)
+
+    audioManager.backgroundMusic = love.audio.newSource("sfx/bg_music/mainTheme.wav", "static")
+    audioManager.backgroundMusic:setVolume(0.2)
+
     startTime = love.timer.getTime( )
     load_high_scores()
 end
@@ -584,6 +592,9 @@ function love.update(dt)
 
     accumulator = accumulator+dt
     
+    if not audioManager.backgroundMusic:isPlaying( ) then 
+        audioManager.backgroundMusic:play()
+    end
 
     if accumulator >= tickPeriod then
         ticks= ticks+ 1
