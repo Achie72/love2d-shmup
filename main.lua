@@ -155,9 +155,15 @@ ticks = 0
 webBuild = false
 
 highScores = {}
-
+ 
 audioManager = {
     backgroundMusic = nil,
+    menu = {
+        open = false,
+        step = nil,
+        upgradeActivated = nil,
+        xpReached = nil
+    }
 }
 
 function love.load()
@@ -224,11 +230,55 @@ function love.load()
 
     myFont = love.graphics.newFont('gfx/BMmini.TTF', 8)
 
-    audioManager.backgroundMusic = love.audio.newSource("sfx/bg_music/mainTheme.wav", "static")
-    audioManager.backgroundMusic:setVolume(0.2)
-
     startTime = love.timer.getTime( )
     load_high_scores()
+    setAudio()
+end
+
+function setAudio()
+    audioManager.backgroundMusic = love.audio.newSource("sfx/bg_music/mainTheme.wav", "stream")
+    audioManager.backgroundMusic:setVolume(0.2)
+
+    audioManager.menu.step = love.audio.newSource("sfx/ui/menuStep.wav", "static")
+    audioManager.menu.step:setVolume(0.2)
+    audioManager.menu.upgradeActivated = love.audio.newSource("sfx/ui/upgradeActivated.wav", "static")
+    audioManager.menu.upgradeActivated:setVolume(0.2)
+    audioManager.menu.xpReached = love.audio.newSource("sfx/ui/xpReached.wav", "static")
+    audioManager.menu.xpReached:setVolume(0.2)
+
+
+    love.audio.setEffect("effectsOFF", {type="compressor", enable=false})
+    love.audio.setEffect("chorusEffect", {type="chorus", waveform="sine", rate=5, depth=.5})
+    love.audio.setEffect("bandPass", {
+        type="equalizer",
+        lowgain=0,
+        lowcut=500,
+        lowmidgain=1,
+        --lowmidfrequency=1,
+        --lowmidbandwidth=1,
+        highmidgain=0,
+        --highmidfrequency=1,
+        highmidfrequency=2000,
+        highgain=0,
+        highcut=4000,
+    })
+    --audioManager.backgroundMusic:setEffect("bandPass")
+    --audioManager.backgroundMusic:setFilter{ type="bandpass", highgain=.2, volume=0.5 } -- This volume 
+    --audioManager.backgroundMusic:setFilter( )
+    --only affects the dry sound.
+end
+
+
+function xpMenuOpen()
+    audioManager.backgroundMusic:setFilter{ type="bandpass", highgain=.2, volume=0.5 }
+    audioManager.menu.xpReached:play()
+    audioManager.menu.open = true
+end
+
+function xpMenuClosed()
+    audioManager.backgroundMusic:setFilter( )
+    audioManager.menu.upgradeActivated:play()
+    audioManager.menu.open = false
 end
 
 function split(source, delimiters)
@@ -838,7 +888,13 @@ function update_game()
 
 
     if levelUp then
+        if(not audioManager.menu.open) then
+            xpMenuOpen()
+        end
         if love.keyboard.isDown("c") then
+            if(audioManager.menu.open) then
+                xpMenuClosed()
+            end
             levelUp = false
             
             local choosenUpgrade = levelUpgrades[upgradeIndicator]
@@ -847,11 +903,13 @@ function update_game()
         elseif love.keyboard.isDown("w") or love.keyboard.isDown("up") then
             if released then
                 upgradeIndicator = upgradeIndicator-1
+                audioManager.menu.step:play()
                 released = false
             end
         elseif love.keyboard.isDown("s") or love.keyboard.isDown("down") then
             if released then
                 upgradeIndicator = upgradeIndicator+1
+                audioManager.menu.step:play()
                 released = false
             end
         else
