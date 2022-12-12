@@ -1,0 +1,7 @@
+Rogala #10 - Recievment and further plans
+
+After the game jam was over it was time to publish and see how other react to the experience! Thankfully most of the feedback was positive which is an amazing news! Most mentioned thing was the onomatopoeia system that enhanced the style and let it embrace the chaos. There were a few comments about them being distracting, but I hope the toggle system will solve that alltogether.
+
+The only question mark in the future of the project is major design choices. I'm not sure the game needs the looping enemies, but without them the horizontal layout is more of a hinder than a feature, so I'm seriously considering switching over to a classical sideways moving shump. That way the player will have enough time to interact/kill al the enemies and reap the rewards. Not sure where to move on yet with it, but I'll have time this month to think about where to take the game.
+
+One major amazing news is that BeforeYouCloseYourMind joined the project once more and created a sick mockup for a background OST and some much needed sound effects! I hope we can get more work done in the future together as this sudden news sparked my excitment for the project once again!

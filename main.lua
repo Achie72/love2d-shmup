@@ -46,18 +46,20 @@ player = {
     laserSfx = nil,
     kills = 0,
     killedBy = 0,
+    killedByName = "",
     survived = 0,
     score = 0,
     pilotStyle = ""
 }
 
 director = {
-    maximumCredits = 0,
-    credits = 8,
+    maximumCredits = 20,
+    credits = 20,
     difficulty = 1,
-    enemyCredits = {1, 1, 2, 3, 4},
-    eliteMultiplier = {0, 1, 2, 1},
-    difficultyRating = {"Easy","Normal","Hard","Very Hard","Insane","Impossible","BRUTAL","HELLISH","APOCALYPSE"}
+    enemyCredits = {1, 1, 2, 3, 4, 8},
+    eliteMultiplier = {0, 1, 2, 1, 2},
+    difficultyRating = {"Easy","Normal","Hard","Very Hard","Insane","Impossible","BRUTAL","HELLISH","APOCALYPSE"},
+    miniboss = false
 }
 
 statistics = {
@@ -129,6 +131,13 @@ bullets = {}
 
 enemies = {}
 enemyBullets = {}
+enemyBossNames = {
+    {"Z'aalost","Mlogath","Xuize"},
+    {"Devourer","Destroyer","Doom"},
+    {"of Suns","of Stars","of Galaxies"}
+}
+
+
 experience = {}
 
 playerBulletSpr = nil
@@ -167,12 +176,12 @@ audioManager = {
 }
 
 function love.load()
-
     love.graphics.setDefaultFilter('nearest','nearest',0)
 
     --window = {translateX = 40, translateY = 40, scale = 1, width = 1920, height = 1080}
 	--width, height = love.graphics.getDimensions ()
     love.window.setMode (960, 548, {resizable=true, borderless=false})
+    love.window.setTitle = "Rogala"
     gameCanvas = love.graphics.newCanvas(canvasWidth, canvasHeight)
     
 
@@ -187,7 +196,7 @@ function love.load()
     end
 
     -- load enemy sprites
-    for i=1,5 do
+    for i=1,6 do
         local frame1 = love.graphics.newImage("gfx/enemies/circ_"..i.."_1.png")
         local frame2 = love.graphics.newImage("gfx/enemies/circ_"..i.."_2.png")
         local sprites = {frame1,frame2}
@@ -379,13 +388,15 @@ function reset()
     player.frozenTime = 0
     player.kills = 0
     player.killedBy = 0
+    player.killedByName = ""
     player.survived = 0
     score = 0
     pilotStyle = ""
 
-    director.maximumCredits = 0
-    director.credits = 8
+    director.maximumCredits = 20
+    director.credits = 20
     director.difficulty = 1
+    director.miniboss = false
     
 
     statistics.low = 0
@@ -568,9 +579,9 @@ function add_player_bul(_x,_y,_sx,_sy,_tpe,_goal)
 end
 
 function add_enemy(_x,_tpe,_family, _elite)
-    local movements = {"downward", "sinus", "left-right", "downward", "left-right"}
-    local bulDamages = {2,3,4,2,2}
-    local shotCooldowns = {240, 60, 50, 90, 5}
+    local movements = {"downward", "sinus", "left-right", "downward", "left-right", "patrolTop"}
+    local bulDamages = {2,3,4,2,2, 10}
+    local shotCooldowns = {240, 60, 50, 90, 5, 90}
     local hpNumber =  math.floor(2*(1+_tpe)*(1+director.difficulty))*10
     local shotCalc = math.floor(shotCooldowns[_tpe]/math.max((1+(director.difficulty)),0.15))
 	local enemy = {
@@ -597,10 +608,22 @@ function add_enemy(_x,_tpe,_family, _elite)
 		elite = _elite,
         movement = movements[_tpe],
         dir = "",
-        credits = director.enemyCredits[_tpe] * (1+director.eliteMultiplier[_elite+1]) 
+        credits = director.enemyCredits[_tpe] * (1+director.eliteMultiplier[_elite+1]),
+        name=""
 	}
 
-	
+    if enemy.tpe%6 == 0 then
+        enemy.cw = 16
+        enemy.ch = 16
+        enemy.dir = "left"
+        enemy.maxHp = enemy.maxHp * 2
+        enemy.hp = enemy.hp * 2
+        local name1 = enemyBossNames[1][math.random(1,#enemyBossNames[1])]
+        local name2 = enemyBossNames[2][math.random(1,#enemyBossNames[2])]
+        local name3 = enemyBossNames[3][math.random(1,#enemyBossNames[3])]
+        enemy.name = name1.." "..name2.." "..name3
+    end
+
 	if enemy.tpe == 5 then enemy.shootingInterval = 60 end
     if enemy.movement == "left-right" then
         if love.math.random() > 0.5 then
@@ -964,7 +987,10 @@ function update_game()
         if love.keyboard.isDown("g") then
             player.xp = player.level*2
         end
-
+        if love.keyboard.isDown("escape") then
+            reset()
+            gameMode = 1
+        end
         local newLoc = {
             x = newPx,
             y = newPy,
@@ -1113,16 +1139,21 @@ function spawn_enemy()
     local tries = 0
     local elite = 0
     local randomEnemyToSpawn = 0
+    local miniboss = false
     repeat
         elite = love.math.random(0,3)
-        randomEnemyToSpawn = love.math.random(1,5)
+        randomEnemyToSpawn = love.math.random(5,6)
         tries = tries + 1
     until (director.credits - (director.enemyCredits[randomEnemyToSpawn] * (1+director.eliteMultiplier[elite+1]))  > 0) or (tries > tryNumber)
 
     if not (tries > tryNumber) then
-        director.credits = director.credits - director.enemyCredits[randomEnemyToSpawn] * (1+director.eliteMultiplier[elite+1]) 
-
-        add_enemy(love.math.random(0, 192),randomEnemyToSpawn, 0, elite)
+        if not ((randomEnemyToSpawn%6 == 0) and (director.miniboss == true)) then
+            director.credits = director.credits - director.enemyCredits[randomEnemyToSpawn] * (1+director.eliteMultiplier[elite+1]) 
+            add_enemy(love.math.random(0, 192),randomEnemyToSpawn, 0, elite)
+            if (randomEnemyToSpawn%6 == 0) then
+                director.miniboss = true
+            end
+        end
     end
 end
 
@@ -1233,6 +1264,9 @@ function update_enemies()
 			table.remove(enemies,_)
             player.kills = player.kills+1
             player.score = player.score + enemy.tpe*10
+            if enemy.tpe%6 == 0 then
+                director.miniboss = false
+            end
 		end
 
         if ticks%15 == 0 then
@@ -1349,15 +1383,34 @@ function update_enemies()
 	
 		if enemy.tpe == 5 then
 			if (enemy.nextShoot == 0)and (enemy.isShooting) then
-				local a = math.sin(math.rad(ticks*2))
-				local b = math.cos(math.rad(ticks*2))
-				add_enemy_bul(enemy.x+4, enemy.y+4,  a/2, b/2, status, enemy.tpe, enemy.bulDamage)
-				add_enemy_bul(enemy.x+4, enemy.y+4,  -a/2, -b/2, status, enemy.tpe, enemy.bulDamage) 
-				enemy.nextShoot = 3
-				enemy.shoot = 2
-                enemyShootSfx:play()
-			 --sfx(1,nil,-1,0)
+                    local a = math.sin(math.rad(ticks*2))
+                    local b = math.cos(math.rad(ticks*2))
+                    add_enemy_bul(enemy.x+4, enemy.y+4,  a/2, b/2, status, enemy.tpe, enemy.bulDamage)
+                    add_enemy_bul(enemy.x+4, enemy.y+4,  -a/2, -b/2, status, enemy.tpe, enemy.bulDamage) 
+                    enemy.nextShoot = 15
+                    enemy.shoot = 2
+                    enemyShootSfx:play()
+             --sfx(1,nil,-1,0)
 			end
+		end
+
+        if enemy.tpe == 6 then
+			if enemy.nextShoot == 0 then
+				for i=-math.pi,math.pi,0.5 do
+					add_enemy_bul(enemy.x, enemy.y+4, math.sin(i), math.cos(i), status, enemy.tpe, enemy.bulDamage)
+				end
+				enemy.nextShoot = enemy.shotCooldown
+				enemy.shoot = 3
+                enemyShootSfx:play()
+				--sfx(1,nil,-1,0)
+			end
+            if ticks%30 == 0 then
+                local angle = math.atan2(enemy.y - player.y, enemy.x - player.x)
+				local bsx = -math.cos(angle)
+				local bsy = -math.sin(angle)
+				add_enemy_bul(enemy.x,enemy.y,bsx,bsy, status, enemy.tpe, enemy.bulDamage)
+                enemy.shoot = 3
+            end
 		end
 
         -- flaming elite
@@ -1405,6 +1458,26 @@ function move_enemy(enemy)
         enemy.sy = 0.1
     elseif movement == "sinus" then
         enemy.sx = math.sin(math.rad(ticks))/2
+    elseif movement == "patrolTop" then
+        if enemy.dir == "left" then
+            if enemy.x - enemy.cw > 0 then
+                enemy.sx = -0.5
+            else
+                enemy.dir = "right"
+            end
+        end
+        if enemy.dir == "right" then
+            if enemy.x + enemy.cw < 192 then
+                enemy.sx = 0.5
+            else
+                enemy.dir = "left"
+            end
+        end
+        if enemy.y < enemy.ch then
+            enemy.sy = 1
+        else
+            enemy.sy = 0
+        end
     end
 
     if not (enemy.shotCooldown < 0.5) then
@@ -1570,6 +1643,7 @@ function hit_player(_damage, _status, _source)
         end
     end
 
+    -- TODO: TRACK NAME AS WELL
     if player.hp <= 0 then
         gameMode = 7
         menuProp.spr = enemySprites[_source]
@@ -1846,6 +1920,11 @@ function draw_credits()
     printText("Lazy Devs Academy Community", 30, 60, 5)
     printText("Devtober 2022 Community", 30, 70, 5)
     printText("Love Community", 30, 80, 5)
+    
+
+    printText("Thanks for the amazing music to:",20,90,5)
+    printText("BeforeYouCloseYourMind",30,100,5)
+
     printText("Press C to menu", 160, 114, 5)
 end
 
@@ -1997,8 +2076,8 @@ function draw_enemies()
 
     for _,enemy in ipairs(enemies) do
 
-        if enemy.damaged > 0 then
-			draw_healthbar(enemy.x-1,enemy.y-4,enemy.hp,enemy.maxHp,3,1)
+        if (enemy.damaged > 0) or (enemy.tpe%6==0)then
+			draw_healthbar(enemy.x-1,enemy.y-4,enemy.hp,enemy.maxHp,3,1,enemy.cw,enemy.name)
 		end
 
         love.graphics.draw(enemy.sprite[enemy.animFrame], enemy.x, enemy.y, 0, 1, 1)
@@ -2110,13 +2189,23 @@ function draw_bullets()
     end
 end
 
-function draw_healthbar(_x,_y,_hp,_maxHp,_clrHp,_clrMax)
+function draw_healthbar(_x,_y,_hp,_maxHp,_clrHp,_clrMax,_size,_name)
+    if _size == 16 then
+        _size = 120
+        _x = 40
+        _y = 2
+        _height = 2
+        print_outline(_name,98-#_name*2,8,2,12)
+    else
+        _height = 1
+    end
+
     draw_color(12)
-	love.graphics.rectangle("fill",_x,_y,10,3)
+	love.graphics.rectangle("fill",_x,_y,_size+2,_height+2)
 	draw_color(_clrMax)
-    love.graphics.rectangle("fill",_x+1,_y+1,8,1)
+    love.graphics.rectangle("fill",_x+1,_y+1,_size,_height)
     draw_color(_clrHp)
-	love.graphics.rectangle("fill", _x+1,_y+1,8*(_hp/_maxHp),1)
+	love.graphics.rectangle("fill", _x+1,_y+1,_size*(_hp/_maxHp),_height)
     reset_color()
 end
 -- luacheck: pop ignore love
